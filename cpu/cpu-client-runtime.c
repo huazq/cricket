@@ -988,58 +988,11 @@ cudaError_t cudaLaunchCooperativeKernelMultiDevice(
 #ifdef WITH_API_CNT
     api_call_cnt++;
 #endif // WITH_API_CNT
-    int result;
-    enum clnt_stat retval_1;
-    size_t i;
-    char *buf;
-    void *func = launchParamsList->func;
-    kernel_info_t *info;
-    int found_kernel = 0;
-    dim3 gridDim = launchParamsList->gridDim;
-    dim3 blockDim = launchParamsList->blockDim;
-
-    for (i = 0; i < kernel_infos.length; ++i) {
-        if (list_at(&kernel_infos, i, (void **)&info) != 0) {
-            LOGE(LOG_ERROR, "error gettint element at %d", i);
-            return cudaErrorInvalidDeviceFunction;
-        }
-        if (func != NULL && info != NULL && info->host_fun == func) {
-            LOG(LOG_DEBUG,
-                "calling kernel \"%s\" (param_size: %zd, param_num: %zd)",
-                info->name, info->param_size, info->param_num);
-            found_kernel = 1;
-            break;
-        }
-    }
-    if (!found_kernel) {
-        LOGE(LOG_ERROR, "request to call unknown kernel.");
-        return cudaErrorInvalidDeviceFunction;
-    }
-
-    rpc_dim3 rpc_gridDim = { gridDim.x, gridDim.y, gridDim.z };
-    rpc_dim3 rpc_blockDim = { blockDim.x, blockDim.y, blockDim.z };
-    mem_data rpc_args;
-    rpc_args.mem_data_len =
-        sizeof(size_t) + info->param_num * sizeof(uint16_t) + info->param_size;
-    rpc_args.mem_data_val = malloc(rpc_args.mem_data_len);
-    memcpy(rpc_args.mem_data_val, &info->param_num, sizeof(size_t));
-    memcpy(rpc_args.mem_data_val + sizeof(size_t), info->param_offsets,
-           info->param_num * sizeof(uint16_t));
-    for (size_t j = 0, size = 0; j < info->param_num; ++j) {
-        size = info->param_sizes[j];
-        memcpy(rpc_args.mem_data_val + sizeof(size_t) +
-                   info->param_num * sizeof(uint16_t) + info->param_offsets[j],
-               launchParamsList->args[j], size);
-    }
-    retval_1 = cuda_launch_cooperative_kernel_1(
-        (uint64_t)func, rpc_gridDim, rpc_blockDim, rpc_args,
-        launchParamsList->sharedMem, (uint64_t)launchParamsList->stream,
-        &result, clnt);
-    if (retval_1 != RPC_SUCCESS) {
-        clnt_perror(clnt, "call failed");
-    }
-    free(rpc_args.mem_data_val);
-    return result;
+    (void)launchParamsList;
+    (void)numDevices;
+    (void)flags;
+    LOGE(LOG_ERROR, "cudaLaunchCooperativeKernelMultiDevice is unsupported");
+    return cudaErrorNotSupported;
 }
 
 DEF_FN(cudaError_t, cudaLaunchHostFunc, cudaStream_t, stream, cudaHostFn_t, fn,
@@ -1582,16 +1535,25 @@ cudaError_t cudaMallocPitch(void **devPtr, size_t *pitch, size_t width,
     return result.err;
 }
 
+#if CUDART_VERSION >= 13000
+cudaError_t cudaMemAdvise(const void *devPtr, size_t count,
+                          enum cudaMemoryAdvise advice,
+                          struct cudaMemLocation location)
+#else
 cudaError_t cudaMemAdvise(const void *devPtr, size_t count,
                           enum cudaMemoryAdvise advice, int device)
+#endif
 {
 #ifdef WITH_API_CNT
     api_call_cnt++;
 #endif // WITH_API_CNT
     int result;
     enum clnt_stat retval_1;
-    retval_1 =
-        cuda_mem_advise_1((ptr)devPtr, count, advice, device, &result, clnt);
+#if CUDART_VERSION >= 13000
+    int device = location.id;
+#endif
+    retval_1 = cuda_mem_advise_1((ptr)devPtr, count, advice, device,
+                                  &result, clnt);
     if (retval_1 != RPC_SUCCESS) {
         clnt_perror(clnt, "call failed");
     }
@@ -1616,14 +1578,24 @@ cudaError_t cudaMemGetInfo(size_t *free, size_t *total)
     return result.err;
 }
 
+#if CUDART_VERSION >= 13000
+cudaError_t cudaMemPrefetchAsync(const void *devPtr, size_t count,
+                                 struct cudaMemLocation location,
+                                 unsigned int flags, cudaStream_t stream)
+#else
 cudaError_t cudaMemPrefetchAsync(const void *devPtr, size_t count,
                                  int dstDevice, cudaStream_t stream)
+#endif
 {
 #ifdef WITH_API_CNT
     api_call_cnt++;
 #endif // WITH_API_CNT
     int result;
     enum clnt_stat retval_1;
+#if CUDART_VERSION >= 13000
+    int dstDevice = location.id;
+    (void)flags;
+#endif
     retval_1 = cuda_mem_prefetch_async_1((ptr)devPtr, count, dstDevice,
                                          (ptr)stream, &result, clnt);
     if (retval_1 != RPC_SUCCESS) {
@@ -2186,9 +2158,15 @@ cudaError_t cudaRuntimeGetVersion(int *runtimeVersion)
 DEF_FN(cudaError_t, cudaGraphAddChildGraphNode, cudaGraphNode_t *, pGraphNode,
        cudaGraph_t, graph, const cudaGraphNode_t *, pDependencies, size_t,
        numDependencies, cudaGraph_t, childGraph)
+#if CUDART_VERSION >= 13000
+DEF_FN(cudaError_t, cudaGraphAddDependencies, cudaGraph_t, graph,
+       const cudaGraphNode_t *, from, const cudaGraphNode_t *, to,
+       const cudaGraphEdgeData *, edgeData, size_t, numDependencies)
+#else
 DEF_FN(cudaError_t, cudaGraphAddDependencies, cudaGraph_t, graph,
        const cudaGraphNode_t *, from, const cudaGraphNode_t *, to, size_t,
        numDependencies)
+#endif
 DEF_FN(cudaError_t, cudaGraphAddEmptyNode, cudaGraphNode_t *, pGraphNode,
        cudaGraph_t, graph, const cudaGraphNode_t *, pDependencies, size_t,
        numDependencies)
@@ -2215,8 +2193,14 @@ DEF_FN(cudaError_t, cudaGraphExecDestroy, cudaGraphExec_t, graphExec)
 DEF_FN(cudaError_t, cudaGraphExecKernelNodeSetParams, cudaGraphExec_t,
        hGraphExec, cudaGraphNode_t, node, const struct cudaKernelNodeParams *,
        pNodeParams)
+#if CUDART_VERSION >= 13000
+DEF_FN(cudaError_t, cudaGraphGetEdges, cudaGraph_t, graph, cudaGraphNode_t *,
+       from, cudaGraphNode_t *, to, cudaGraphEdgeData *, edgeData, size_t *,
+       numEdges)
+#else
 DEF_FN(cudaError_t, cudaGraphGetEdges, cudaGraph_t, graph, cudaGraphNode_t *,
        from, cudaGraphNode_t *, to, size_t *, numEdges)
+#endif
 
 cudaError_t cudaGraphGetNodes(cudaGraph_t graph, cudaGraphNode_t *nodes,
                               size_t *numNodes)
@@ -2301,15 +2285,30 @@ DEF_FN(cudaError_t, cudaGraphMemsetNodeSetParams, cudaGraphNode_t, node,
        const struct cudaMemsetParams *, pNodeParams)
 DEF_FN(cudaError_t, cudaGraphNodeFindInClone, cudaGraphNode_t *, pNode,
        cudaGraphNode_t, originalNode, cudaGraph_t, clonedGraph)
+#if CUDART_VERSION >= 13000
+DEF_FN(cudaError_t, cudaGraphNodeGetDependencies, cudaGraphNode_t, node,
+       cudaGraphNode_t *, pDependencies, cudaGraphEdgeData *, edgeData, size_t *,
+       pNumDependencies)
+DEF_FN(cudaError_t, cudaGraphNodeGetDependentNodes, cudaGraphNode_t, node,
+       cudaGraphNode_t *, pDependentNodes, cudaGraphEdgeData *, edgeData,
+       size_t *, pNumDependentNodes)
+#else
 DEF_FN(cudaError_t, cudaGraphNodeGetDependencies, cudaGraphNode_t, node,
        cudaGraphNode_t *, pDependencies, size_t *, pNumDependencies)
 DEF_FN(cudaError_t, cudaGraphNodeGetDependentNodes, cudaGraphNode_t, node,
        cudaGraphNode_t *, pDependentNodes, size_t *, pNumDependentNodes)
+#endif
 DEF_FN(cudaError_t, cudaGraphNodeGetType, cudaGraphNode_t, node,
        enum cudaGraphNodeType *, pType)
+#if CUDART_VERSION >= 13000
+DEF_FN(cudaError_t, cudaGraphRemoveDependencies, cudaGraph_t, graph,
+       const cudaGraphNode_t *, from, const cudaGraphNode_t *, to,
+       const cudaGraphEdgeData *, edgeData, size_t, numDependencies)
+#else
 DEF_FN(cudaError_t, cudaGraphRemoveDependencies, cudaGraph_t, graph,
        const cudaGraphNode_t *, from, const cudaGraphNode_t *, to, size_t,
        numDependencies)
+#endif
 DEF_FN(cudaError_t, cudaProfilerStart, void)
 DEF_FN(cudaError_t, cudaProfilerStop, void)
 

@@ -4,6 +4,7 @@
 #include <link.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h> //sigaction
 
 // For TCP socket
@@ -21,9 +22,6 @@
 #ifdef WITH_IB
 #include "cpu-ib.h"
 #endif // WITH_IB
-
-// static const char* LIBCUDA_PATH = "/lib64/libcuda.so";
-const char *LIBCUDA_PATH = "/usr/local/cuda/lib64/libcudart.so";
 
 CLIENT *clnt = NULL;
 
@@ -250,8 +248,49 @@ void __attribute__((destructor)) deinit_rpc(void)
 
 
 static void *(*dlopen_orig)(const char *, int) = NULL;
+static void *(*dlsym_orig)(void *, const char *) = NULL;
 static int (*dlclose_orig)(void *) = NULL;
 static void *dl_handle = NULL;
+
+static int should_replace_dlopen_library(const char *filename)
+{
+    const char *basename = strrchr(filename, '/');
+    if (basename == NULL) {
+        basename = filename;
+    } else {
+        basename++;
+    }
+
+    static const char *replace_libs[] = {
+        "libcuda.so.1",
+        "libcuda.so",
+        "libnvidia-ml.so.1",
+        "libcudnn_cnn_infer.so.8",
+        "libcudart.so"
+    };
+    static const size_t replace_libs_sz = sizeof(replace_libs) / sizeof(char *);
+    for (size_t i = 0; i != replace_libs_sz; ++i) {
+        if (strcmp(basename, replace_libs[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static const char *current_client_library_path(void)
+{
+    Dl_info info;
+    const char *path;
+
+    path = getenv("CRICKET_CLIENT_LIBRARY_PATH");
+    if (path != NULL && path[0] != '\0') {
+        return path;
+    }
+    if (dladdr((void *)current_client_library_path, &info) != 0 && info.dli_fname != NULL && strchr(info.dli_fname, '/') != NULL) {
+        return info.dli_fname;
+    }
+    return "/opt/cricket/bin/cricket-client.so";
+}
 
 void *dlopen(const char *filename, int flag)
 {
@@ -270,27 +309,14 @@ void *dlopen(const char *filename, int flag)
         return dlopen_orig(filename, flag);
     }
 
-    static const char *replace_libs[] = {
-        "libcuda.so.1",
-        "libcuda.so",
-        "libnvidia-ml.so.1",
-        "libcudnn_cnn_infer.so.8",
-        "/usr/lib/x86_64-linux-gnu/libcuda.so.550.127.05",
-        "/usr/local/cuda/lib64/libcudart.so"
-    };
     LOGE(LOG_DEBUG, "intercepted dlopen(filename: %s)", filename);
-    static const size_t replace_libs_sz = sizeof(replace_libs) / sizeof(char *);
-    if (filename != NULL) {
-        for (size_t i=0; i != replace_libs_sz; ++i) {
-            if (strcmp(filename, replace_libs[i]) == 0) {
-                LOG(LOG_DEBUG, "replacing dlopen call to %s with cricket-client.so", filename);
-                dl_handle = dlopen_orig("cricket-client.so", flag);
-                if (clnt == NULL) {
-                    LOGE(LOG_WARNING, "rpc seems to be uninitialized while loading %s", filename);
-                }
-                return dl_handle;
-            }
+    if (should_replace_dlopen_library(filename)) {
+        LOG(LOG_DEBUG, "replacing dlopen call to %s with %s", filename, current_client_library_path());
+        dl_handle = dlopen_orig(current_client_library_path(), flag);
+        if (clnt == NULL) {
+            LOGE(LOG_WARNING, "rpc seems to be uninitialized while loading %s", filename);
         }
+        return dl_handle;
     }
     /* filename is NULL or not in replace_libs list */
     if ((ret = dlopen_orig(filename, flag)) == NULL) {
@@ -300,6 +326,17 @@ void *dlopen(const char *filename, int flag)
         LOGE(LOG_DEBUG, "dlopen to  %p", map->l_addr);
     }
     return ret;
+}
+
+void *dlsym(void *handle, const char *symbol)
+{
+    if (dlsym_orig == NULL) {
+        dlsym_orig = dlvsym(RTLD_NEXT, "dlsym", "GLIBC_2.2.5");
+        if (dlsym_orig == NULL) {
+            return NULL;
+        }
+    }
+    return dlsym_orig(handle, symbol);
 }
 
 int dlclose(void *handle)
@@ -315,7 +352,6 @@ int dlclose(void *handle)
 
     // Ignore dlclose call that would close this library
     if (dl_handle == handle) {
-        LOGE(LOG_DEBUG, "[dlclose] ignore close");
         return 0;
     } else {
         return dlclose_orig(handle);

@@ -65,6 +65,33 @@ case 1:
     double d;
 };
 
+struct ull3 {
+    unsigned hyper u1;
+    unsigned hyper u2;
+    unsigned hyper u3;
+};
+
+struct nvml_pci_info {
+    string busIdLegacy<32>;
+    unsigned int domain;
+    unsigned int bus;
+    unsigned int device;
+    unsigned int pciDeviceId;
+    unsigned int pciSubSystemId;
+    string busId<32>;
+};
+
+struct nvml_process_info {
+    unsigned int pid;
+    unsigned hyper usedGpuMemory;
+    unsigned int gpuInstanceId;
+    unsigned int computeInstanceId;
+};
+
+struct nvml_process_info_list {
+    nvml_process_info infos<64>;
+};
+
 union int_result switch (int err) {
 case 0:
     int data;
@@ -131,6 +158,27 @@ default:
 union str_result switch (int err) {
 case 0:
     string str<128>;
+default:
+    void;
+};
+
+union ull3_result switch (int err) {
+case 0:
+    ull3 data;
+default:
+    void;
+};
+
+union nvml_pci_info_result switch (int err) {
+case 0:
+    nvml_pci_info data;
+default:
+    void;
+};
+
+union nvml_process_info_result switch (int err) {
+case 0:
+    nvml_process_info_list data;
 default:
     void;
 };
@@ -494,7 +542,29 @@ program RPC_CD_PROG {
         int          rpc_nvmlInitWithFlags(int)                                = 4001;
         int          rpc_nvmlInit_v2(void)                                     = 4002;
         int          rpc_nvmlShutdown(void)                                    = 4003;
-        
+        str_result   rpc_nvmlSystemGetDriverVersion(void)                      = 4004;
+        str_result   rpc_nvmlSystemGetNVMLVersion(void)                        = 4005;
+        int_result   rpc_nvmlSystemGetCudaDriverVersion_v2(void)               = 4006;
+        string       rpc_nvmlErrorString(int)                                  = 4007;
+        ptr_result   rpc_nvmlDeviceGetHandleByIndex_v2(int)                    = 4008;
+        str_result   rpc_nvmlDeviceGetName(ptr)                                = 4009;
+        str_result   rpc_nvmlDeviceGetUUID(ptr)                                = 4010;
+        ull3_result  rpc_nvmlDeviceGetMemoryInfo(ptr)                          = 4011;
+        int_result   rpc_nvmlDeviceGetIndex(ptr)                               = 4012;
+        nvml_pci_info_result rpc_nvmlDeviceGetPciInfo_v3(ptr)                  = 4013;
+        int_result   rpc_nvmlDeviceGetPersistenceMode(ptr)                     = 4014;
+        int_result   rpc_nvmlDeviceGetFanSpeed(ptr)                            = 4015;
+        int_result   rpc_nvmlDeviceGetTemperature(ptr, int)                    = 4016;
+        int_result   rpc_nvmlDeviceGetPerformanceState(ptr)                    = 4017;
+        int_result   rpc_nvmlDeviceGetPowerUsage(ptr)                          = 4018;
+        int_result   rpc_nvmlDeviceGetPowerManagementLimit(ptr)                = 4019;
+        int_result   rpc_nvmlDeviceGetTotalEccErrors(ptr, int, int)            = 4020;
+        int_result   rpc_nvmlDeviceGetMigMode(ptr)                             = 4021;
+        nvml_process_info_result rpc_nvmlDeviceGetComputeRunningProcesses_v3(ptr) = 4022;
+        str_result   rpc_nvmlSystemGetProcessName(int)                         = 4023;
+        int_result   rpc_nvmlDeviceGetEccMode(ptr)                             = 4024;
+        int_result   rpc_nvmlDeviceGetEnforcedPowerLimit(ptr)                  = 4025;
+
         /* CUDNN */
         size_t      rpc_cudnnGetVersion(void) = 5000;
         size_t      rpc_cudnnGetMaxDeviceVersion(void) = 5001;

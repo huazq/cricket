@@ -1,6 +1,10 @@
 #define _GNU_SOURCE
+#include <errno.h>
+#include <netinet/in.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
 #include <unistd.h> //unlink()
 #include <signal.h> //sigaction
@@ -26,7 +30,9 @@
 #include "api-recorder.h"
 #include "gsched.h"
 #include "cpu-server-nvml.h"
+#ifdef WITH_CUDNN
 #include "cpu-server-cudnn.h"
+#endif
 
 INIT_SOCKTYPE
 
@@ -42,6 +48,52 @@ extern gsched_t sched_none;
 unsigned long prog=0, vers=0;
 
 extern void rpc_cd_prog_1(struct svc_req *rqstp, register SVCXPRT *transp);
+
+static int tcp_socket_from_env(void)
+{
+    const char *port_env = getenv("CRICKET_RPC_PORT");
+    if (port_env == NULL || port_env[0] == '\0') {
+        return RPC_ANYSOCK;
+    }
+
+    char *endptr = NULL;
+    long port = strtol(port_env, &endptr, 10);
+    if (*endptr != '\0' || port <= 0 || port > 65535) {
+        LOGE(LOG_ERROR, "invalid CRICKET_RPC_PORT: %s", port_env);
+        exit(1);
+    }
+
+    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock < 0) {
+        LOGE(LOG_ERROR, "socket failed: %s", strerror(errno));
+        exit(1);
+    }
+
+    int reuse = 1;
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) != 0) {
+        LOGE(LOG_WARNING, "setsockopt SO_REUSEADDR failed: %s", strerror(errno));
+    }
+
+    struct sockaddr_in addr = { 0 };
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr.sin_port = htons((uint16_t)port);
+
+    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        LOGE(LOG_ERROR, "bind port %ld failed: %s", port, strerror(errno));
+        close(sock);
+        exit(1);
+    }
+
+    if (listen(sock, SOMAXCONN) != 0) {
+        LOGE(LOG_ERROR, "listen port %ld failed: %s", port, strerror(errno));
+        close(sock);
+        exit(1);
+    }
+
+    LOG(LOG_INFO, "using fixed TCP port %ld from CRICKET_RPC_PORT", port);
+    return sock;
+}
 
 void int_handler(int signal) {
     if (socktype == UNIX) {
@@ -245,17 +297,26 @@ void cricket_main(size_t prog_num, size_t vers_num)
         }
         connection_is_local = 1;
         break;
-    case TCP:
+    case TCP: {
         LOG(LOG_INFO, "using TCP...");
-        transp = svctcp_create(RPC_ANYSOCK, 0, 0);
+        int tcp_sock = tcp_socket_from_env();
+        transp = svctcp_create(tcp_sock, 0, 0);
         if (transp == NULL) {
             LOGE(LOG_ERROR, "cannot create service.");
+            if (tcp_sock != RPC_ANYSOCK) {
+                close(tcp_sock);
+            }
             exit(1);
         }
-        pmap_unset(prog, vers);
+        if (tcp_sock == RPC_ANYSOCK) {
+            pmap_unset(prog, vers);
+            protocol = IPPROTO_TCP;
+        } else {
+            protocol = 0;
+        }
         LOG(LOG_INFO, "listening on port %d", transp->xp_port);
-        protocol = IPPROTO_TCP;
         break;
+    }
     case UDP:
         /* From RPCGEN documentation:
          * Warning: since UDP-based RPC messages can only hold up to 8 Kbytes
@@ -311,10 +372,12 @@ void cricket_main(size_t prog_num, size_t vers_num)
         goto cleanup1;
     }
 
+#ifdef WITH_CUDNN
     if (server_cudnn_init(restore) != 0) {
-        LOGE(LOG_ERROR, "initializing server_nvml failed.");
+        LOGE(LOG_ERROR, "initializing server_cudnn failed.");
         goto cleanup0;
     }
+#endif
 
 #ifdef WITH_IB
 
@@ -346,7 +409,9 @@ void cricket_main(size_t prog_num, size_t vers_num)
     ret = 0;
     //api_records_print();
  cleanup00:
+#ifdef WITH_CUDNN
     server_cudnn_deinit();
+#endif
  cleanup0:
     server_driver_deinit();
  cleanup1:

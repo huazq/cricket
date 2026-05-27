@@ -1605,8 +1605,17 @@ bool_t cuda_mem_advise_1_svc(ptr devPtr, size_t count, int advice, int device,
     RECORD_ARG(4, device);
 
     LOGE(LOG_DEBUG, "cudaMemAdvise");
+#if CUDART_VERSION >= 13000
+    struct cudaMemLocation location = {
+        .type = cudaMemLocationTypeDevice,
+        .id = device,
+    };
+    *result = cudaMemAdvise(memory_mg_get(&rm_memory, (void *)devPtr), count,
+                            advice, location);
+#else
     *result = cudaMemAdvise(memory_mg_get(&rm_memory, (void *)devPtr), count,
                             advice, device);
+#endif
 
     RECORD_RESULT(integer, *result);
     return 1;
@@ -1631,8 +1640,17 @@ bool_t cuda_mem_prefetch_async_1_svc(ptr devPtr, size_t count, int dstDevice,
     RECORD_ARG(4, stream);
 
     LOGE(LOG_DEBUG, "cudaMemPrefetchAsync");
+#if CUDART_VERSION >= 13000
+    struct cudaMemLocation location = {
+        .type = cudaMemLocationTypeDevice,
+        .id = dstDevice,
+    };
+    *result = cudaMemPrefetchAsync(memory_mg_get(&rm_memory, (void *)devPtr),
+                                   count, location, 0, (void *)stream);
+#else
     *result = cudaMemPrefetchAsync(memory_mg_get(&rm_memory, (void *)devPtr),
                                    count, dstDevice, (void *)stream);
+#endif
 
     RECORD_RESULT(integer, *result);
     return 1;

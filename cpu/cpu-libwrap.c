@@ -3,14 +3,21 @@
 #include "cpu-libwrap.h"
 #include "log.h"
 
-static const char* LIBCUDA_PATH = "/usr/local/cuda/lib64/libcudart.so";
+static const char* DEFAULT_LIBCUDA_PATH = "/usr/local/cuda/lib64/libcudart.so";
 static void *so_handle;
+
+static const char *libwrap_cuda_path(void)
+{
+    const char *path = getenv("CRICKET_LIBCUDA_PATH");
+    return path && path[0] ? path : DEFAULT_LIBCUDA_PATH;
+}
 
 inline void* libwrap_get_sohandle()
 {
     if (!so_handle) {
-        if ( !(so_handle = dlopen(LIBCUDA_PATH, RTLD_LAZY)) ) {
-            LOGE(LOG_ERROR, "%s", dlerror());
+        const char *cuda_path = libwrap_cuda_path();
+        if ( !(so_handle = dlopen(cuda_path, RTLD_LAZY)) ) {
+            LOGE(LOG_ERROR, "dlopen %s failed: %s", cuda_path, dlerror());
             so_handle = NULL;
             return 0;
         }

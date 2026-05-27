@@ -4,8 +4,9 @@ SERVER_LIB = cricket-server.so
 #RPC client library
 CLIENT = cricket-client.so
 
-CUDA_SRC = /usr/local/cuda
-LIBTIRPC_PREFIX = ../submodules/libtirpc/install
+CUDA_SRC ?= /usr/local/cuda
+CUDA_COMPONENT_ROOT ?=
+LIBTIRPC_PREFIX ?= ../submodules/libtirpc/install
 SUBMODULE_LIBS = ../submodules/lib
 
 CC = gcc
@@ -42,7 +43,6 @@ SRC_SERVER = $(RPC_XDR)                 \
 			 mt-memcpy.c				\
 			 cpu-elf2.c					\
 			 cpu-server-nvml.c			\
-			 cpu-server-cudnn.c         \
 			 cpu-server-cublaslt.c
 
 SRC_SERVER_LIB = server-library.c
@@ -62,7 +62,6 @@ SRC_CLIENT = $(RPC_XDR)                 \
 			 mt-memcpy.c				\
 			 cpu-elf2.c					\
 			 cpu-client-nvml.c          \
-			 cpu-client-cudnn.c			\
 			 cpu-client-cublas.c        \
 			 cpu-client-cublaslt.c
 
@@ -71,17 +70,32 @@ SRC_SERVER += cpu-ib.c
 SRC_CLIENT += cpu-ib.c
 endif
 
+ifdef WITH_CUDNN
+CC_FLAGS += -DWITH_CUDNN=$(WITH_CUDNN)
+endif
+
 OBJ_SERVER = $(SRC_SERVER:%.c=%.o)
 OBJ_CLIENT = $(SRC_CLIENT:%.c=%.o)
 
 # Compiler flags
 RPCGEN_FLAGS = -C -M -N
 INC_FLAGS += -I$(LIBTIRPC_PREFIX)/include/tirpc
+ifneq ($(CUDA_COMPONENT_ROOT),)
+CUDA_COMPONENTS = cuda_cccl cuda_crt cuda_cudart cuda_nvml_dev cuda_nvrtc cuda_nvtx cuda_opencl cuda_profiler_api libcublas libcusolver libcusparse libnvjitlink libnvjpeg libnvfatbin
+INC_FLAGS += $(foreach component,$(CUDA_COMPONENTS),-I$(CUDA_COMPONENT_ROOT)/$(component)/targets/x86_64-linux/include)
+else
 INC_FLAGS += -I$(CUDA_SRC)/include
+endif
 
 LIB_FLAGS += -L$(LIBTIRPC_PREFIX)/lib
+ifneq ($(CUDA_COMPONENT_ROOT),)
+CUDA_LIB_COMPONENTS = cuda_cudart cuda_nvml_dev cuda_nvrtc cuda_nvtx cuda_opencl libcublas libcusolver libcusparse libnvjitlink libnvjpeg libnvfatbin
+LIB_FLAGS += $(foreach component,$(CUDA_LIB_COMPONENTS),-L$(CUDA_COMPONENT_ROOT)/$(component)/targets/x86_64-linux/lib)
+LIB_FLAGS += $(foreach component,$(CUDA_LIB_COMPONENTS),-L$(CUDA_COMPONENT_ROOT)/$(component)/targets/x86_64-linux/lib/stubs)
+else
 LIB_FLAGS += -L$(CUDA_SRC)/lib64
 LIB_FLAGS += -L$(CUDA_SRC)/lib64/stubs
+endif
 CC_FLAGS += -std=gnu11 -Wno-deprecated-declarations $(INC_FLAGS)
 # TODO: use extern in header files instead of direct definition e.g. in cpu-common.h to remove -fcommon flag
 CC_FLAGS += -fcommon
@@ -110,7 +124,10 @@ ifdef WITH_IB
 CC_FLAGS += -DWITH_IB=$(WITH_IB)
 endif
 
-SERVER_LD_FLAGS = $(LD_FLAGS) -lcudart -lcusolver -lcuda -lcublas -lrt -lpthread -lnvidia-ml -lcudnn -lcublasLt
+SERVER_LD_FLAGS = $(LD_FLAGS) -lcudart -lcusolver -lcuda -lcublas -lrt -lpthread -lnvidia-ml -lcublasLt
+ifdef WITH_CUDNN
+SERVER_LD_FLAGS += -lcudnn
+endif
 SERVER_BIN_LD_FLAGS = $(SERVER_LD_FLAGS) -Wl,--unresolved-symbols=ignore-in-object-files
 CLIENT_LD_FLAGS = $(LD_FLAGS)
 

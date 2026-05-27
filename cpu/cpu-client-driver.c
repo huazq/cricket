@@ -1,10 +1,11 @@
 #define _GNU_SOURCE
-#include <vdpau/vdpau.h>
-
 #include <cuda.h>
+#ifdef WITH_CUDA_GRAPHICS
+#include <vdpau/vdpau.h>
 #include <cudaEGL.h>
 #include <cudaGL.h>
 #include <cudaVDPAU.h>
+#endif
 #include <elf.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,7 @@
 // DEF_FN(CUresult, cuProfilerInitialize, const char*, configFile, const char*,
 // outputFile, CUoutput_mode, outputMode) DEF_FN(CUresult, cuProfilerStart)
 // DEF_FN(CUresult, cuProfilerStop)
+#ifdef WITH_CUDA_GRAPHICS
 DEF_FN(CUresult, cuVDPAUGetDevice, CUdevice *, pDevice, VdpDevice, vdpDevice,
        VdpGetProcAddress *, vdpGetProcAddress)
 #undef cuVDPAUCtxCreate
@@ -33,6 +35,7 @@ DEF_FN(CUresult, cuGraphicsVDPAURegisterVideoSurface, CUgraphicsResource *,
        pCudaResource, VdpVideoSurface, vdpSurface, unsigned int, flags)
 DEF_FN(CUresult, cuGraphicsVDPAURegisterOutputSurface, CUgraphicsResource *,
        pCudaResource, VdpOutputSurface, vdpSurface, unsigned int, flags)
+#endif
 
 #undef cuDeviceTotalMem
 CUresult cuDeviceTotalMem(size_t *bytes, CUdevice dev)
@@ -173,6 +176,7 @@ DEF_FN(CUresult, cuTexRefSetAddress2D, CUtexref, hTexRef,
 #undef cuTexRefSetAddress
 DEF_FN(CUresult, cuTexRefSetAddress, size_t *, ByteOffset, CUtexref, hTexRef,
        CUdeviceptr, dptr, size_t, bytes)
+#ifdef WITH_CUDA_GRAPHICS
 DEF_FN(CUresult, cuGLInit)
 #undef cuGLGetDevices
 #undef cuGLMapBufferObject_v2
@@ -219,6 +223,7 @@ DEF_FN(CUresult, cuGraphicsResourceGetMappedEglFrame, CUeglFrame *, eglFrame,
        mipLevel)
 DEF_FN(CUresult, cuEGLStreamConsumerConnectWithFlags, CUeglStreamConnection *,
        conn, EGLStreamKHR, unsigned int, flags)
+#endif
 
 // DEF_FN(CUresult, cuInit, unsigned int, Flags)
 CUresult cuInit(unsigned int Flags)
@@ -1116,12 +1121,21 @@ CUresult cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(
     *numBlocks = result.int_result_u.data;
     return result.err;
 }
+#if CUDA_VERSION >= 13000
+DEF_FN(CUresult, cuMemAdvise, CUdeviceptr, devPtr, size_t, count, CUmem_advise,
+       advice, CUmemLocation, location)
+DEF_FN(CUresult, cuMemPrefetchAsync, CUdeviceptr, devPtr, size_t, count,
+       CUmemLocation, location, unsigned int, flags, CUstream, hStream)
+DEF_FN(CUresult, cuMemPrefetchAsync_ptsz, CUdeviceptr, devPtr, size_t, count,
+       CUmemLocation, location, unsigned int, flags, CUstream, hStream)
+#else
 DEF_FN(CUresult, cuMemAdvise, CUdeviceptr, devPtr, size_t, count, CUmem_advise,
        advice, CUdevice, device)
 DEF_FN(CUresult, cuMemPrefetchAsync, CUdeviceptr, devPtr, size_t, count,
        CUdevice, dstDevice, CUstream, hStream)
 DEF_FN(CUresult, cuMemPrefetchAsync_ptsz, CUdeviceptr, devPtr, size_t, count,
        CUdevice, dstDevice, CUstream, hStream)
+#endif
 DEF_FN(CUresult, cuMemRangeGetAttribute, void *, data, size_t, dataSize,
        CUmem_range_attribute, attribute, CUdeviceptr, devPtr, size_t, count)
 DEF_FN(CUresult, cuMemRangeGetAttributes, void **, data, size_t *, dataSizes,
@@ -1195,6 +1209,21 @@ DEF_FN(CUresult, cuGraphGetNodes, CUgraph, hGraph, CUgraphNode *, nodes,
        size_t *, numNodes)
 DEF_FN(CUresult, cuGraphGetRootNodes, CUgraph, hGraph, CUgraphNode *, rootNodes,
        size_t *, numRootNodes)
+#if CUDA_VERSION >= 13000
+DEF_FN(CUresult, cuGraphGetEdges, CUgraph, hGraph, CUgraphNode *, from,
+       CUgraphNode *, to, CUgraphEdgeData *, edgeData, size_t *, numEdges)
+DEF_FN(CUresult, cuGraphNodeGetDependencies, CUgraphNode, hNode, CUgraphNode *,
+       dependencies, CUgraphEdgeData *, edgeData, size_t *, numDependencies)
+DEF_FN(CUresult, cuGraphNodeGetDependentNodes, CUgraphNode, hNode,
+       CUgraphNode *, dependentNodes, CUgraphEdgeData *, edgeData, size_t *,
+       numDependentNodes)
+DEF_FN(CUresult, cuGraphAddDependencies, CUgraph, hGraph, const CUgraphNode *,
+       from, const CUgraphNode *, to, const CUgraphEdgeData *, edgeData, size_t,
+       numDependencies)
+DEF_FN(CUresult, cuGraphRemoveDependencies, CUgraph, hGraph,
+       const CUgraphNode *, from, const CUgraphNode *, to,
+       const CUgraphEdgeData *, edgeData, size_t, numDependencies)
+#else
 DEF_FN(CUresult, cuGraphGetEdges, CUgraph, hGraph, CUgraphNode *, from,
        CUgraphNode *, to, size_t *, numEdges)
 DEF_FN(CUresult, cuGraphNodeGetDependencies, CUgraphNode, hNode, CUgraphNode *,
@@ -1206,6 +1235,7 @@ DEF_FN(CUresult, cuGraphAddDependencies, CUgraph, hGraph, const CUgraphNode *,
 DEF_FN(CUresult, cuGraphRemoveDependencies, CUgraph, hGraph,
        const CUgraphNode *, from, const CUgraphNode *, to, size_t,
        numDependencies)
+#endif
 #if CUDA_VERSION >= 12000
 #undef cuGraphInstantiate
 DEF_FN(CUresult, cuGraphInstantiate, CUgraphExec *, phGraphExec, CUgraph,
