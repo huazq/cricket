@@ -16,6 +16,11 @@ struct dsz {
     size_t sz2;
 };
 
+struct dszptr {
+    size_t sz;
+    ptr p;
+};
+
 struct ptrsz {
     ptr p;
     size_t s;
@@ -130,6 +135,13 @@ default:
 union dsz_result switch (int err) {
 case 0:
     dsz data;
+default:
+    void;
+};
+
+union dszptr_result switch (int err) {
+case 0:
+    dszptr data;
 default:
     void;
 };
@@ -279,6 +291,11 @@ program RPC_CD_PROG {
         int          rpc_elf_load(mem_data, ptr)                                 = 51;
         int          rpc_elf_unload(ptr)                                         = 52;
         int          rpc_register_var(ptr, ptr, ptr, string, int, size_t, int, int) = 53;
+
+        /* cuLibrary API (CUDA 12.x) */
+        ptr_result   rpc_cuLibraryLoadData(mem_data)                             = 54;
+        int          rpc_cuLibraryUnload(ptr)                                    = 55;
+        ptr_result   rpc_cuLibraryGetModule(ptr)                                 = 56;
 
         /* RUNTIME API */
         /* ### Device Management ### */
@@ -497,6 +514,8 @@ program RPC_CD_PROG {
         sz_result    rpc_cumemgetallocationgranularity(mem_data, int)          = 1030;
         int_result   rpc_cuOccupancyMaxActiveBlocksPerMultiprocessor(ptr, int, size_t) = 1031;
         int_result   rpc_cuOccupancyMaxActiveBlocksPerMultiprocessorWithFlags(ptr, int, size_t, int) = 1032;
+        ptr_result   rpc_cuModuleLoadDataEx(mem_data)                           = 1033;
+        dszptr_result rpc_cuMemGetAddressRange(ptr)                              = 1034;
 
         /* HIDDEN DRIVER API */
 /*        ptr_result   rpc_hidden_get_device_ctx(int)                            = 1101;

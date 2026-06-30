@@ -25,12 +25,14 @@ int server_driver_init(int restore)
         ret &= resource_mg_init(&rm_globals, 0);
         ret &= resource_mg_init(&rm_devices, 1);
         ret &= resource_mg_init(&rm_contexts, 1);
+        ret &= resource_mg_init(&rm_libraries, 0);
     } else {
         ret &= resource_mg_init(&rm_modules, 0);
         ret &= resource_mg_init(&rm_functions, 0);
         ret &= resource_mg_init(&rm_globals, 0);
         ret &= resource_mg_init(&rm_devices, 0);
         ret &= resource_mg_init(&rm_contexts, 0);
+        ret &= resource_mg_init(&rm_libraries, 0);
         // ret &= server_driver_restore("ckp");
     }
     return ret;
@@ -872,3 +874,111 @@ result->ptr_result_u.ptr, arg2, (void*)arg3, *(void**)arg3);
     return 1;
 }
 */
+
+// -----------------------------------------------------------------------
+// cuLibrary API handlers (CUDA 12.x)
+// -----------------------------------------------------------------------
+bool_t rpc_cuLibraryLoadData_1_svc(mem_data code, ptr_result *result,
+                                    struct svc_req *rqstp)
+{
+    CUlibrary library;
+    CUresult res;
+    LOGE(LOG_INFO, "rpc_cuLibraryLoadData(len: %#x)", code.mem_data_len);
+
+    GSCHED_RETAIN;
+    res = cuLibraryLoadData(&library, code.mem_data_val, NULL, NULL, 0, NULL, NULL);
+    GSCHED_RELEASE;
+
+    if (res != CUDA_SUCCESS) {
+        LOGE(LOG_ERROR, "cuLibraryLoadData failed: %d", res);
+        result->err = res;
+        return 1;
+    }
+
+    resource_mg_create(&rm_libraries, (void*)library);
+    result->ptr_result_u.ptr = (ptr)library;
+    result->err = CUDA_SUCCESS;
+    LOGE(LOG_INFO, "->library: %p", (void*)library);
+    return 1;
+}
+
+bool_t rpc_cuLibraryUnload_1_svc(ptr library, int *result,
+                                   struct svc_req *rqstp)
+{
+    LOGE(LOG_INFO, "rpc_cuLibraryUnload(library: %p)", (void*)library);
+    GSCHED_RETAIN;
+    *result = cuLibraryUnload((CUlibrary)library);
+    GSCHED_RELEASE;
+    return 1;
+}
+
+bool_t rpc_cuLibraryGetModule_1_svc(ptr library, ptr_result *result,
+                                      struct svc_req *rqstp)
+{
+    CUmodule module;
+    CUresult res;
+    LOGE(LOG_INFO, "rpc_cuLibraryGetModule(library: %p)", (void*)library);
+
+    GSCHED_RETAIN;
+    res = cuLibraryGetModule(&module, (CUlibrary)library);
+    GSCHED_RELEASE;
+
+    if (res != CUDA_SUCCESS) {
+        LOGE(LOG_ERROR, "cuLibraryGetModule failed: %d", res);
+        result->err = res;
+        return 1;
+    }
+
+    resource_mg_create(&rm_modules, (void*)module);
+    result->ptr_result_u.ptr = (ptr)module;
+    result->err = CUDA_SUCCESS;
+    LOGE(LOG_INFO, "->module: %p", (void*)module);
+    return 1;
+}
+
+bool_t rpc_cuModuleLoadDataEx_1_svc(mem_data image, ptr_result *result,
+                                      struct svc_req *rqstp)
+{
+    CUmodule module;
+    CUresult res;
+    LOGE(LOG_INFO, "rpc_cuModuleLoadDataEx(len: %#x)", image.mem_data_len);
+
+    GSCHED_RETAIN;
+    res = cuModuleLoadDataEx(&module, image.mem_data_val, 0, NULL, NULL);
+    GSCHED_RELEASE;
+
+    if (res != CUDA_SUCCESS) {
+        LOGE(LOG_ERROR, "cuModuleLoadDataEx failed: %d", res);
+        result->err = res;
+        return 1;
+    }
+
+    resource_mg_create(&rm_modules, (void*)module);
+    result->ptr_result_u.ptr = (ptr)module;
+    result->err = CUDA_SUCCESS;
+    LOGE(LOG_INFO, "->module: %p", (void*)module);
+    return 1;
+}
+
+bool_t rpc_cuMemGetAddressRange_1_svc(ptr dptr, dszptr_result *result,
+                                        struct svc_req *rqstp)
+{
+    CUdeviceptr pbase;
+    size_t psize;
+    CUresult res;
+
+    GSCHED_RETAIN;
+    res = cuMemGetAddressRange(&pbase, &psize, (CUdeviceptr)dptr);
+    GSCHED_RELEASE;
+
+    if (res != CUDA_SUCCESS) {
+        LOGE(LOG_ERROR, "cuMemGetAddressRange failed: %d", res);
+        result->err = res;
+        return 1;
+    }
+
+    result->dszptr_result_u.data.p = (ptr)pbase;
+    result->dszptr_result_u.data.sz = psize;
+    result->err = CUDA_SUCCESS;
+    return 1;
+}

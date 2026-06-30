@@ -133,8 +133,21 @@ DEF_FN(CUresult, cuMemAllocPitch, CUdeviceptr *, dptr, size_t *, pPitch, size_t,
 #undef cuMemFree
 DEF_FN(CUresult, cuMemFree, CUdeviceptr, dptr)
 #undef cuMemGetAddressRange
-DEF_FN(CUresult, cuMemGetAddressRange, CUdeviceptr *, pbase, size_t *, psize,
-       CUdeviceptr, dptr)
+CUresult cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
+                               CUdeviceptr dptr)
+{
+    enum clnt_stat retval;
+    dszptr_result result;
+
+    retval = rpc_cuMemGetAddressRange_1((ptr)dptr, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "[rpc] cuMemGetAddressRange failed.");
+        return CUDA_ERROR_UNKNOWN;
+    }
+    if (pbase != NULL) *pbase = (CUdeviceptr)result.dszptr_result_u.data.p;
+    if (psize != NULL) *psize = result.dszptr_result_u.data.sz;
+    return result.err;
+}
 #undef cuMemHostGetDevicePointer
 DEF_FN(CUresult, cuMemHostGetDevicePointer, CUdeviceptr *, pdptr, void *, p,
        unsigned int, Flags)
@@ -599,10 +612,77 @@ CUresult cuModuleLoadData(CUmodule *module, const void *image)
     return result.err;
 }
 
-DEF_FN(CUresult, cuModuleLoadDataEx, CUmodule *, module, const void *, image,
-       unsigned int, numOptions, CUjit_option *, options, void **, optionValues)
-DEF_FN(CUresult, cuModuleLoadFatBinary, CUmodule *, module, const void *,
-       fatCubin)
+CUresult cuModuleLoadDataEx(CUmodule *module, const void *image,
+                             unsigned int numOptions, CUjit_option *options,
+                             void **optionValues)
+{
+    enum clnt_stat retval;
+    ptr_result result;
+    mem_data mem;
+
+    LOGE(LOG_DEBUG, "cuModuleLoadDataEx(image: %p, len: ...)", image);
+    // For simplicity, send the image data directly (rpcgen handles it)
+    mem.mem_data_len = 0; // server will load from image ptr
+    mem.mem_data_val = (char*)image;
+
+    retval = rpc_cuModuleLoadDataEx_1(mem, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "[rpc] cuModuleLoadDataEx failed.");
+        return CUDA_ERROR_UNKNOWN;
+    }
+    if (module != NULL) *module = (CUmodule)result.ptr_result_u.ptr;
+    return result.err;
+}
+
+CUresult cuLibraryLoadData(CUlibrary *library, const void *code, void *arg,
+                            void *arr, int flags, void *options,
+                            void *optionValues)
+{
+    enum clnt_stat retval;
+    ptr_result result;
+    mem_data mem;
+
+    LOGE(LOG_INFO, "cuLibraryLoadData(code: %p)", code);
+    mem.mem_data_val = (char*)code;
+    mem.mem_data_len = 0; // server reads from the code pointer directly
+
+    retval = rpc_cuLibraryLoadData_1(mem, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "[rpc] cuLibraryLoadData failed.");
+        return CUDA_ERROR_UNKNOWN;
+    }
+    if (library != NULL) *library = (CUlibrary)result.ptr_result_u.ptr;
+    return result.err;
+}
+
+CUresult cuLibraryUnload(CUlibrary library)
+{
+    enum clnt_stat retval;
+    int result;
+
+    LOGE(LOG_INFO, "cuLibraryUnload(library: %p)", (void*)library);
+    retval = rpc_cuLibraryUnload_1((ptr)library, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "[rpc] cuLibraryUnload failed.");
+        return CUDA_ERROR_UNKNOWN;
+    }
+    return result;
+}
+
+CUresult cuLibraryGetModule(CUmodule *module, CUlibrary library)
+{
+    enum clnt_stat retval;
+    ptr_result result;
+
+    LOGE(LOG_INFO, "cuLibraryGetModule(library: %p)", (void*)library);
+    retval = rpc_cuLibraryGetModule_1((ptr)library, &result, clnt);
+    if (retval != RPC_SUCCESS) {
+        LOGE(LOG_ERROR, "[rpc] cuLibraryGetModule failed.");
+        return CUDA_ERROR_UNKNOWN;
+    }
+    if (module != NULL) *module = (CUmodule)result.ptr_result_u.ptr;
+    return result.err;
+}
 CUresult cuModuleUnload(CUmodule hmod)
 {
     enum clnt_stat retval;
