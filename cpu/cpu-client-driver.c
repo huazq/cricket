@@ -139,7 +139,7 @@ CUresult cuMemGetAddressRange(CUdeviceptr *pbase, size_t *psize,
     enum clnt_stat retval;
     dszptr_result result;
 
-    retval = rpc_cuMemGetAddressRange_1((ptr)dptr, &result, clnt);
+    retval = rpc_cumemgetaddressrange_1((ptr)dptr, &result, clnt);
     if (retval != RPC_SUCCESS) {
         LOGE(LOG_ERROR, "[rpc] cuMemGetAddressRange failed.");
         return CUDA_ERROR_UNKNOWN;
@@ -620,12 +620,23 @@ CUresult cuModuleLoadDataEx(CUmodule *module, const void *image,
     ptr_result result;
     mem_data mem;
 
-    LOGE(LOG_DEBUG, "cuModuleLoadDataEx(image: %p, len: ...)", image);
-    // For simplicity, send the image data directly (rpcgen handles it)
-    mem.mem_data_len = 0; // server will load from image ptr
-    mem.mem_data_val = (char*)image;
+    LOGE(LOG_DEBUG, "cuModuleLoadDataEx(image: %p)", image);
+    if (image == NULL) {
+        LOGE(LOG_ERROR, "image is NULL!");
+        return CUDA_ERROR_INVALID_IMAGE;
+    }
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)image;
+    if (ehdr->e_ident[EI_MAG0] != ELFMAG0 ||
+        ehdr->e_ident[EI_MAG1] != ELFMAG1 ||
+        ehdr->e_ident[EI_MAG2] != ELFMAG2 ||
+        ehdr->e_ident[EI_MAG3] != ELFMAG3) {
+        LOGE(LOG_ERROR, "image is not an ELF!");
+        return CUDA_ERROR_INVALID_IMAGE;
+    }
+    mem.mem_data_len = ehdr->e_shoff + ehdr->e_shnum * ehdr->e_shentsize;
+    mem.mem_data_val = (uint8_t *)image;
 
-    retval = rpc_cuModuleLoadDataEx_1(mem, &result, clnt);
+    retval = rpc_cumoduleloaddataex_1(mem, &result, clnt);
     if (retval != RPC_SUCCESS) {
         LOGE(LOG_ERROR, "[rpc] cuModuleLoadDataEx failed.");
         return CUDA_ERROR_UNKNOWN;
@@ -634,19 +645,39 @@ CUresult cuModuleLoadDataEx(CUmodule *module, const void *image,
     return result.err;
 }
 
-CUresult cuLibraryLoadData(CUlibrary *library, const void *code, void *arg,
-                            void *arr, int flags, void *options,
-                            void *optionValues)
+CUresult cuLibraryLoadData(CUlibrary *library, const void *code,
+                            CUjit_option *jitOptions, void **jitOptionsValues,
+                            unsigned int numJitOptions,
+                            CUlibraryOption *libraryOptions,
+                            void **libraryOptionValues,
+                            unsigned int numLibraryOptions)
 {
     enum clnt_stat retval;
     ptr_result result;
     mem_data mem;
 
     LOGE(LOG_INFO, "cuLibraryLoadData(code: %p)", code);
-    mem.mem_data_val = (char*)code;
-    mem.mem_data_len = 0; // server reads from the code pointer directly
+    if (code == NULL) {
+        LOGE(LOG_ERROR, "code is NULL!");
+        return CUDA_ERROR_INVALID_IMAGE;
+    }
+    mem.mem_data_val = (uint8_t *)code;
+    mem.mem_data_len = 0;
 
-    retval = rpc_cuLibraryLoadData_1(mem, &result, clnt);
+    /* Detect format via magic bytes */
+    const unsigned char *bytes = (const unsigned char *)code;
+    if (bytes[0] == 0x7f && bytes[1] == 'E' && bytes[2] == 'L' && bytes[3] == 'F') {
+        /* ELF cubin — compute size from section headers */
+        Elf64_Ehdr *ehdr = (Elf64_Ehdr *)code;
+        mem.mem_data_len = ehdr->e_shoff + ehdr->e_shnum * ehdr->e_shentsize;
+        LOGE(LOG_INFO, "cuLibraryLoadData: ELF, size=%#zx", mem.mem_data_len);
+    } else {
+        LOGE(LOG_ERROR, "cuLibraryLoadData: unknown format, magic=%02x%02x%02x%02x",
+             bytes[0], bytes[1], bytes[2], bytes[3]);
+        return CUDA_ERROR_INVALID_IMAGE;
+    }
+
+    retval = rpc_culibraryloaddata_1(mem, &result, clnt);
     if (retval != RPC_SUCCESS) {
         LOGE(LOG_ERROR, "[rpc] cuLibraryLoadData failed.");
         return CUDA_ERROR_UNKNOWN;
@@ -661,7 +692,7 @@ CUresult cuLibraryUnload(CUlibrary library)
     int result;
 
     LOGE(LOG_INFO, "cuLibraryUnload(library: %p)", (void*)library);
-    retval = rpc_cuLibraryUnload_1((ptr)library, &result, clnt);
+    retval = rpc_culibraryunload_1((ptr)library, &result, clnt);
     if (retval != RPC_SUCCESS) {
         LOGE(LOG_ERROR, "[rpc] cuLibraryUnload failed.");
         return CUDA_ERROR_UNKNOWN;
@@ -675,7 +706,7 @@ CUresult cuLibraryGetModule(CUmodule *module, CUlibrary library)
     ptr_result result;
 
     LOGE(LOG_INFO, "cuLibraryGetModule(library: %p)", (void*)library);
-    retval = rpc_cuLibraryGetModule_1((ptr)library, &result, clnt);
+    retval = rpc_culibrarygetmodule_1((ptr)library, &result, clnt);
     if (retval != RPC_SUCCESS) {
         LOGE(LOG_ERROR, "[rpc] cuLibraryGetModule failed.");
         return CUDA_ERROR_UNKNOWN;

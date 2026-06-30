@@ -886,7 +886,7 @@ bool_t rpc_cuLibraryLoadData_1_svc(mem_data code, ptr_result *result,
     LOGE(LOG_INFO, "rpc_cuLibraryLoadData(len: %#x)", code.mem_data_len);
 
     GSCHED_RETAIN;
-    res = cuLibraryLoadData(&library, code.mem_data_val, NULL, NULL, 0, NULL, NULL);
+    res = cuLibraryLoadData(&library, code.mem_data_val, NULL, NULL, 0, NULL, NULL, 0);
     GSCHED_RELEASE;
 
     if (res != CUDA_SUCCESS) {
