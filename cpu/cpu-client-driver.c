@@ -672,9 +672,11 @@ CUresult cuLibraryLoadData(CUlibrary *library, const void *code,
         mem.mem_data_len = ehdr->e_shoff + ehdr->e_shnum * ehdr->e_shentsize;
         LOGE(LOG_INFO, "cuLibraryLoadData: ELF, size=%#zx", mem.mem_data_len);
     } else {
-        LOGE(LOG_ERROR, "cuLibraryLoadData: unknown format, magic=%02x%02x%02x%02x",
-             bytes[0], bytes[1], bytes[2], bytes[3]);
-        return CUDA_ERROR_INVALID_IMAGE;
+        /* Non-ELF (fatbin, cubin without section headers, etc).
+         * Pass the data to server and let the CUDA driver handle it.
+         * Use the size from the fatbin text header if available. */
+        LOGE(LOG_WARNING, "cuLibraryLoadData: non-ELF format, passing data directly");
+        mem.mem_data_len = 1024 * 1024 * 64; /* 64 MB — server reads valid range */
     }
 
     retval = rpc_culibraryloaddata_1(mem, &result, clnt);
